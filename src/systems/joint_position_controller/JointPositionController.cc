@@ -85,6 +85,12 @@ class gz::sim::systems::JointPositionControllerPrivate
   /// \brief Joint index to be used.
   public: unsigned int jointIndex = 0u;
 
+  /// \brief Feedback enable state
+  public: bool feedback = false;
+
+  /// \brief Feedback publisher of joint position
+  public: transport::Node::Publisher feedbackPub;
+
   /// \brief Operation modes
   enum OperationMode
   {
@@ -198,6 +204,11 @@ void JointPositionController::Configure(const Entity &_entity,
     }
   }
 
+  if (_sdf->HasElement("feedback"))
+  {
+    this->dataPtr->feedback = _sdf->Get<bool>("feedback");
+  }
+
   this->dataPtr->posPid.Init(p, i, d, iMax, iMin, cmdMax, cmdMin, cmdOffset);
 
 
@@ -298,6 +309,13 @@ void JointPositionController::Configure(const Entity &_entity,
     gzmsg << "JointPositionController subscribing to Double messages on ["
       << topic << "]" << std::endl;
   }
+
+    if(this->dataPtr->feedback){
+
+      std::string feedback_topic = topic + "/feedback";
+      this->dataPtr->feedbackPub = this->dataPtr->node.Advertise<msgs::Double>(feedback_topic);
+
+    }
 
   gzdbg << "[JointPositionController] system parameters:" << std::endl;
   gzdbg << "p_gain: ["     << p         << "]"            << std::endl;
@@ -418,6 +436,14 @@ void JointPositionController::PreUpdate(
     std::lock_guard<std::mutex> lock(this->dataPtr->jointCmdMutex);
     error = jointPosComp->Data().at(this->dataPtr->jointIndex) -
             this->dataPtr->jointPosCmd;
+  }
+
+  if(this->dataPtr->feedback)
+  {
+    msgs::Double feedback;
+    feedback.set_data(jointPosComp->Data().at(this->dataPtr->jointIndex));
+    this->dataPtr->feedbackPub.Publish(feedback);
+
   }
 
   // Check if the mode is ABS
